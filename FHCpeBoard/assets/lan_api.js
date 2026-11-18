@@ -3,7 +3,7 @@
   'use strict';
   const upstream=typeof module!=='undefined'?require('./upstream_local.js'):root.UpstreamLocal;
   const DeviceAddress=typeof module!=='undefined'?require('./device_address.js'):root.DeviceAddress;
-  const air6=typeof module!=='undefined'?require('./air6_api.js'):root.Air6Local;
+  const air6=typeof module!=='undefined'?require('./air6_rpc.js'):root.Air6Rpc;
   const IV='opqrstuvwxyz{|}~';
   // IPv4 or IPv6, LAN or public; see device_address.js.
   const address=value=>DeviceAddress.parse(value);

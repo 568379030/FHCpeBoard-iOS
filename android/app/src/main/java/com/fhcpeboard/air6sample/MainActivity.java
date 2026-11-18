@@ -81,7 +81,7 @@ public class MainActivity extends Activity {
    try{
     URI uri=new URI(address);if(!Set.of("http","https").contains(uri.getScheme())||uri.getHost()==null||uri.getUserInfo()!=null)throw new IOException("DEVICE_ADDRESS_REJECTED");
     JSONObject opt=new JSONObject(options);c=(HttpURLConnection)uri.toURL().openConnection();int timeout=Math.max(3000,Math.min(180000,opt.optInt("timeoutMs",30000)));c.setConnectTimeout(timeout);c.setReadTimeout(timeout);c.setInstanceFollowRedirects(false);
-    c.setRequestMethod(opt.optString("method","GET"));JSONObject h=opt.optJSONObject("headers");if(h!=null)for(String k:h.keySet())c.setRequestProperty(k,h.getString(k));
+    c.setRequestMethod(opt.optString("method","GET"));JSONObject h=opt.optJSONObject("headers");if(h!=null){Iterator<String> keys=h.keys();while(keys.hasNext()){String k=keys.next();c.setRequestProperty(k,h.getString(k));}}
     synchronized(cookies){for(Map.Entry<String,List<String>> e:cookies.get(uri,Map.of()).entrySet())c.setRequestProperty(e.getKey(),String.join("; ",e.getValue()));}
     if(opt.has("body")){c.setDoOutput(true);try(OutputStream o=c.getOutputStream()){o.write(opt.getString("body").getBytes(StandardCharsets.UTF_8));}}
     code=c.getResponseCode();synchronized(cookies){cookies.put(uri,c.getHeaderFields());}
