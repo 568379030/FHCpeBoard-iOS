@@ -32,7 +32,7 @@ public class MainActivity extends Activity {
   if(!name.matches("[A-Za-z0-9_.-]+"))return "";
   try(InputStream in=getAssets().open(name)){return new String(readBytes(in),StandardCharsets.UTF_8);}catch(Exception e){Log.e("Air6","Missing asset "+name,e);return "";}
  }
- private void rt(String js){runOnUiThread(()->runtime.evaluateJavascript(js,null));}
+ private void rt(String js){runOnUiThread(()->{if(!destroyed)runtime.evaluateJavascript(js,null);});}
  private void status(String s){Log.i("Air6",s);runOnUiThread(()->diagnostic.setText(s));}
  private void verifyLoginPage(int attempts){
   if(destroyed||attempts==0)return;
@@ -70,7 +70,7 @@ public class MainActivity extends Activity {
    }
   });
   runtime.loadDataWithBaseURL("https://app.local/",asset("core.html"),"text/html","UTF-8",null);
-  startupHandler.postDelayed(()->{if(!destroyed&&!rendered)status("启动失败：请导出 Air6JS 日志，页面尚未生成");},15000);
+  startupHandler.postDelayed(()->{if(!destroyed&&!rendered)status("启动失败：请导出 Air6JS 日志，页面尚未生成");},30000);
  }
  public class Core {
   @JavascriptInterface public String assetRead(String n){return asset(n);}
@@ -84,10 +84,10 @@ public class MainActivity extends Activity {
   @JavascriptInterface public String fileRead(String path){return "";}
   @JavascriptInterface public void fileRemove(String path){}
   @JavascriptInterface public String decodeSmsPdu(String pdu){return "null";}
-  @JavascriptInterface public void loadHTML(String id,String html){runOnUiThread(()->{loadId=id;page.loadDataWithBaseURL("https://app.local/",html,"text/html","UTF-8",null);});}
-  @JavascriptInterface public void evalJS(String id,String code){runOnUiThread(()->page.evaluateJavascript(code,result->{
+  @JavascriptInterface public void loadHTML(String id,String html){runOnUiThread(()->{if(destroyed)return;loadId=id;page.loadDataWithBaseURL("https://app.local/",html,"text/html","UTF-8",null);});}
+  @JavascriptInterface public void evalJS(String id,String code){runOnUiThread(()->{if(destroyed)return;page.evaluateJavascript(code,result->{
    try{rt("window.__nativeDone("+q(new JSONObject(Map.of("id",id,"result",result==null?"null":result)).toString())+")");}catch(Exception e){status(e.toString());}
-  }));}
+  });});}
   @JavascriptInterface public void fetch(String id,String address,String options){requests.execute(()->{
    int code=0;String body="NETWORK_FAILED";HttpURLConnection c=null;
    try{

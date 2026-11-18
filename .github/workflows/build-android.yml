@@ -45,11 +45,9 @@ jobs:
             timeout 30 adb install android/app/build/outputs/apk/debug/app-debug.apk
             timeout 15 adb logcat -c
             timeout 15 adb shell am force-stop com.android.launcher3
+            sleep 5
             timeout 30 adb shell am start -W -n com.fhcpeboard.air6sample/.MainActivity
-            sleep 12
-            timeout 15 adb shell am force-stop com.android.launcher3
-            timeout 30 adb shell am start -W -n com.fhcpeboard.air6sample/.MainActivity
-            sleep 3
+            sleep 25
             timeout 15 adb logcat -d > android-test/logcat.txt
             timeout 15 adb exec-out screencap -p > android-test/startup.png
             timeout 15 adb shell uiautomator dump /sdcard/window.xml || true
