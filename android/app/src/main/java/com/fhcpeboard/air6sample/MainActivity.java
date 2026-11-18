@@ -21,6 +21,8 @@ public class MainActivity extends Activity {
  private FrameLayout layout;
  private String loadId;
  private boolean rendered;
+ private boolean destroyed;
+ private final Handler startupHandler=new Handler(Looper.getMainLooper());
  private final ExecutorService requests=Executors.newFixedThreadPool(4);
  private android.content.SharedPreferences prefs;
  private final java.net.CookieManager cookies=new java.net.CookieManager(null,CookiePolicy.ACCEPT_ALL);
@@ -45,9 +47,11 @@ public class MainActivity extends Activity {
   super.onCreate(saved);prefs=getSharedPreferences("air6",MODE_PRIVATE);WebView.setWebContentsDebuggingEnabled(true);
   layout=new FrameLayout(this);setContentView(layout);diagnostic=new TextView(this);diagnostic.setText("正在启动 AIR6…");
   runtime=view("runtime");page=view("page");runtime.addJavascriptInterface(new Core(),"AndroidCore");page.addJavascriptInterface(new Board(),"AndroidBoard");
+  runtime.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+  runtime.setFocusable(false);runtime.setFocusableInTouchMode(false);
   layout.addView(runtime,new FrameLayout.LayoutParams(1,1));layout.addView(page,new FrameLayout.LayoutParams(-1,-1));layout.addView(diagnostic,new FrameLayout.LayoutParams(-1,-2));
   page.setWebViewClient(new WebViewClient(){@Override public void onPageFinished(WebView v,String url){
-   rendered=true;diagnostic.setVisibility(View.GONE);status("PAGE_READY");
+   rendered=true;diagnostic.setVisibility(View.GONE);page.requestFocus();status("PAGE_READY");
    if(loadId!=null){rt("window.__nativeDone("+q(new JSONObject(Map.of("id",loadId,"result","true")).toString())+")");loadId=null;}
   }});
   runtime.setWebViewClient(new WebViewClient(){
@@ -59,7 +63,7 @@ public class MainActivity extends Activity {
    }
   });
   runtime.loadDataWithBaseURL("https://app.local/",asset("core.html"),"text/html","UTF-8",null);
-  new Handler(Looper.getMainLooper()).postDelayed(()->{if(!rendered)status("启动失败：请导出 Air6JS 日志，页面尚未生成");},15000);
+  startupHandler.postDelayed(()->{if(!destroyed&&!rendered)status("启动失败：请导出 Air6JS 日志，页面尚未生成");},15000);
  }
  public class Core {
   @JavascriptInterface public String assetRead(String n){return asset(n);}
@@ -99,5 +103,5 @@ public class MainActivity extends Activity {
  }
  @Override protected void onResume(){super.onResume();if(runtime!=null)rt("window.__lanActive&&window.__lanActive(true)");}
  @Override protected void onPause(){if(runtime!=null)rt("window.__lanActive&&window.__lanActive(false)");super.onPause();}
- @Override protected void onDestroy(){requests.shutdownNow();if(runtime!=null)runtime.destroy();if(page!=null)page.destroy();super.onDestroy();}
+ @Override protected void onDestroy(){destroyed=true;startupHandler.removeCallbacksAndMessages(null);requests.shutdownNow();if(runtime!=null)runtime.destroy();if(page!=null)page.destroy();super.onDestroy();}
 }
