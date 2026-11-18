@@ -34,6 +34,13 @@ public class MainActivity extends Activity {
  }
  private void rt(String js){runOnUiThread(()->runtime.evaluateJavascript(js,null));}
  private void status(String s){Log.i("Air6",s);runOnUiThread(()->diagnostic.setText(s));}
+ private void verifyLoginPage(int attempts){
+  if(destroyed||attempts==0)return;
+  page.evaluateJavascript("!!document.body && document.body.innerText.includes('登录配置')",result->{
+   if("true".equals(result))Log.i("Air6","LOGIN_FORM_READY");
+   else startupHandler.postDelayed(()->verifyLoginPage(attempts-1),500);
+  });
+ }
  private WebView view(String name){
   WebView v=new WebView(this);v.getSettings().setJavaScriptEnabled(true);v.getSettings().setDomStorageEnabled(true);
   v.getSettings().setAllowFileAccess(false);v.getSettings().setAllowContentAccess(false);
@@ -51,7 +58,7 @@ public class MainActivity extends Activity {
   runtime.setFocusable(false);runtime.setFocusableInTouchMode(false);
   layout.addView(runtime,new FrameLayout.LayoutParams(1,1));layout.addView(page,new FrameLayout.LayoutParams(-1,-1));layout.addView(diagnostic,new FrameLayout.LayoutParams(-1,-2));
   page.setWebViewClient(new WebViewClient(){@Override public void onPageFinished(WebView v,String url){
-   rendered=true;diagnostic.setVisibility(View.GONE);page.requestFocus();status("PAGE_READY");
+   rendered=true;diagnostic.setVisibility(View.GONE);page.requestFocus();status("PAGE_READY");verifyLoginPage(20);
    if(loadId!=null){rt("window.__nativeDone("+q(new JSONObject(Map.of("id",loadId,"result","true")).toString())+")");loadId=null;}
   }});
   runtime.setWebViewClient(new WebViewClient(){
