@@ -17,6 +17,23 @@ final class WebHostViewController: UIViewController {
     private var pageBridge: BridgeHost!
     private var pendingLoadID: String?
 
+    // 真机诊断：启动看门狗 + 屏幕日志面板。
+    private var bootTimer: Timer?
+    private var didRenderPage = false
+    private var diagLines: [String] = []
+    private lazy var diagLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        label.textColor = .systemGreen
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.82)
+        label.numberOfLines = 0
+        label.isHidden = true
+        label.textAlignment = .left
+        label.lineBreakMode = .byWordWrapping
+        return label
+    }()
+
     private var versionString: String {
         (Bundle.main.object(forInfoDictionaryKey: "FHCpeBoardVersion") as? String)
             ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
@@ -27,6 +44,7 @@ final class WebHostViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         buildWebViews()
+        installDiagnostics()
         loadRuntime()
     }
 
@@ -42,7 +60,10 @@ final class WebHostViewController: UIViewController {
         runtimeBridge = BridgeHost(role: .runtime)
         pageBridge = BridgeHost(role: .page)
 
+        // DiagHook 必须排在最前：其余脚本抛错时它已经就位。
+        let diag = bundleScript(named: "DiagHook")
         let runtimeScripts: [String] = [
+            diag,
             "window.__IOS_KV = \(jsLiteral(KeyValueStore.snapshot()));",
             "window.__IOS_ASSETS = \(jsLiteral(loadAssetTexts()));",
             "window.__IOS_VERSION = \(jsLiteral(versionString));",
@@ -54,6 +75,7 @@ final class WebHostViewController: UIViewController {
 
         let wifi = wifiCacheSnapshot()
         let pageScripts: [String] = [
+            diag,
             "window.__IOS_WIFI = \(jsLiteral(wifi));",
             "window.__IOS_LS = \(jsLiteral(localStorageSnapshot()));",
             bundleScript(named: "StorageShim"),
@@ -63,13 +85,20 @@ final class WebHostViewController: UIViewController {
         runtime = makeWebView(bridge: runtimeBridge, scripts: runtimeScripts, opaque: false)
         page = makeWebView(bridge: pageBridge, scripts: pageScripts, opaque: true)
         page.navigationDelegate = self
+        runtime.navigationDelegate = self
 
         pageBridge.runtime = runtime
         runtimeBridge.page = page
         runtimeBridge.runtime = runtime
 
+        runtimeBridge.onDiagnostic = { [weak self] text in self?.logDiagnostic(text) }
+        pageBridge.onDiagnostic = { [weak self] text in self?.logDiagnostic(text) }
+
         pageBridge.onLoadHTML = { [weak self] id, html in
             guard let self = self else { return }
+            self.didRenderPage = true
+            self.bootTimer?.invalidate()
+            self.bootTimer = nil
             self.pendingLoadID = id
             self.page.loadHTMLString(html, baseURL: AssetSchemeHandler.baseURL)
         }
@@ -116,7 +145,48 @@ final class WebHostViewController: UIViewController {
     }
 
     private func loadRuntime() {
-        runtime.load(URLRequest(url: AssetSchemeHandler.baseURL.appendingPathComponent("core.html")))
+        let coreURL = AssetSchemeHandler.baseURL.appendingPathComponent("core.html")
+        logDiagnostic("loading runtime: \(coreURL.absoluteString)")
+        runtime.load(URLRequest(url: coreURL))
+
+        // 8 秒内可见页没有收到任何 HTML → 判定启动失败，弹出诊断面板。
+        bootTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            if !self.didRenderPage {
+                self.logDiagnostic("BOOT TIMEOUT: runtime 未在 8s 内产出页面")
+                self.showDiagnostics()
+            }
+        }
+    }
+
+    // MARK: - 诊断面板
+
+    private func installDiagnostics() {
+        view.addSubview(diagLabel)
+        let top = view.safeAreaLayoutGuide.topAnchor
+        NSLayoutConstraint.activate([
+            diagLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            diagLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 8),
+            diagLabel.topAnchor.constraint(equalTo: top, constant: 8),
+            diagLabel.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -8)
+        ])
+        // 三指长按 2 秒手动唤出诊断面板（正常启动时隐藏）。
+        let gesture = UILongPressGestureRecognizer(target: self, action: #selector(showDiagnostics))
+        gesture.numberOfTouchesRequired = 3
+        gesture.minimumPressDuration = 2
+        view.addGestureRecognizer(gesture)
+    }
+
+    private func logDiagnostic(_ text: String) {
+        NSLog("[FHCpeBoard] %@", text)
+        diagLines.append(text)
+        if diagLines.count > 60 { diagLines.removeFirst(diagLines.count - 60) }
+        diagLabel.text = diagLines.joined(separator: "\n")
+    }
+
+    @objc private func showDiagnostics() {
+        diagLabel.isHidden = false
+        view.bringSubviewToFront(diagLabel)
     }
 
     // MARK: - 资源
@@ -129,6 +199,7 @@ final class WebHostViewController: UIViewController {
     private func loadAssetTexts() -> [String: String] {
         guard let root = assetRoot(),
               let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) else {
+            logDiagnostic("ASSETS DIR MISSING: \(assetRoot()?.path ?? "nil")")
             return [:]
         }
         var map: [String: String] = [:]
@@ -137,13 +208,14 @@ final class WebHostViewController: UIViewController {
             guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
             map[name] = text
         }
+        logDiagnostic("assets loaded: \(map.count) files")
         return map
     }
 
     private func bundleScript(named name: String) -> String {
         guard let url = Bundle.main.url(forResource: name, withExtension: "js"),
               let text = try? String(contentsOf: url, encoding: .utf8) else {
-            NSLog("[FHCpeBoard] missing script: %@.js", name)
+            logDiagnostic("MISSING SCRIPT: \(name).js")
             return ""
         }
         return text
@@ -160,7 +232,8 @@ final class WebHostViewController: UIViewController {
         return dictionary
     }
 
-    private func wifiCacheSnapshot() -> [String: String] {        var result: [String: String] = [:]
+    private func wifiCacheSnapshot() -> [String: String] {
+        var result: [String: String] = [:]
         let prefix = "WIFI_CACHE_"
         for (key, value) in KeyValueStore.snapshot() where key.hasPrefix(prefix) {
             result[String(key.dropFirst(prefix.count))] = value
@@ -174,7 +247,10 @@ final class WebHostViewController: UIViewController {
               let text = String(data: data, encoding: .utf8) else {
             return "{}"
         }
+        // JSON 合法但 JS 字符串字面量非法：这两个字符会让整段注入脚本 SyntaxError。
         return text
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
     }
 }
 
@@ -182,15 +258,18 @@ final class WebHostViewController: UIViewController {
 
 extension WebHostViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView === runtime { logDiagnostic("runtime didFinish") }
         resolvePendingLoad(result: "true")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        resolvePendingLoad(result: "null")
+        logDiagnostic("\(webView === runtime ? "runtime" : "page") didFail: \(error.localizedDescription)")
+        if webView === page { resolvePendingLoad(result: "null") }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        resolvePendingLoad(result: "null")
+        logDiagnostic("\(webView === runtime ? "runtime" : "page") provisionalFail: \(error.localizedDescription)")
+        if webView === page { resolvePendingLoad(result: "null") }
     }
 
     private func resolvePendingLoad(result: String) {

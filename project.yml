@@ -25,6 +25,8 @@ targets:
       - path: FHCpeBoard/Web
         excludes:
           - "*.js"
+      - path: FHCpeBoard/Web/DiagHook.js
+        buildPhase: resources
       - path: FHCpeBoard/Web/StorageShim.js
         buildPhase: resources
       - path: FHCpeBoard/Web/SmsPdu.js

@@ -22,6 +22,9 @@ final class BridgeHost: NSObject, WKScriptMessageHandler {
     /// loadHTML 需要等导航真正完成再回执，交给持有 delegate 的控制器处理。
     var onLoadHTML: ((_ id: String, _ html: String) -> Void)?
 
+    /// 页面侧 JS 异常 / console.error 的收集回调，用于真机白屏诊断。
+    var onDiagnostic: ((_ text: String) -> Void)?
+
     init(role: Role) {
         self.role = role
         super.init()
@@ -75,6 +78,11 @@ final class BridgeHost: NSObject, WKScriptMessageHandler {
 
         case "log":
             NSLog("[FHCpeBoard] %@", BridgeHost.string(body["text"]))
+
+        case "diag":
+            let text = BridgeHost.string(body["text"])
+            NSLog("[FHCpeBoard][DIAG-%@] %@", role == .runtime ? "runtime" : "page", text)
+            onDiagnostic?(text)
 
         default:
             break
