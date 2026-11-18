@@ -1,0 +1,44 @@
+name: build-unsigned-ipa
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 生成 Xcode 工程
+        run: xcodegen generate
+
+      - name: 编译（未签名）
+        run: |
+          xcodebuild \
+            -project FHCpeBoard.xcodeproj \
+            -scheme FHCpeBoard \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: 打包 IPA
+        run: bash scripts/make-ipa.sh
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: FHCpeBoard-unsigned-ipa
+          path: dist/*.ipa
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,56 @@
+name: FHCpeBoard
+options:
+  bundleIdPrefix: com.fhcpeboard
+  deploymentTarget:
+    iOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    MARKETING_VERSION: "1.4.3"
+    CURRENT_PROJECT_VERSION: "52"
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+    CLANG_ENABLE_MODULES: YES
+
+targets:
+  FHCpeBoard:
+    type: application
+    platform: iOS
+    sources:
+      - path: FHCpeBoard/App
+      - path: FHCpeBoard/Core
+      # .js 必须显式走 Resources：Xcode 默认会把 JS 当成源码丢进 Compile Sources。
+      - path: FHCpeBoard/Web
+        excludes:
+          - "*.js"
+      - path: FHCpeBoard/Web/StorageShim.js
+        buildPhase: resources
+      - path: FHCpeBoard/Web/SmsPdu.js
+        buildPhase: resources
+      - path: FHCpeBoard/Web/ShimRuntime.js
+        buildPhase: resources
+      - path: FHCpeBoard/Web/ShimPage.js
+        buildPhase: resources
+      # 蓝色文件夹引用：整个 assets 目录原样进入 bundle，保持相对路径不变。
+      - path: FHCpeBoard/assets
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: FHCpeBoard
+        PRODUCT_BUNDLE_IDENTIFIER: com.fhcpeboard.ios
+        INFOPLIST_FILE: FHCpeBoard/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        # 默认产出未签名包，交给自签工具处理；有证书时改回 YES 并填 DEVELOPMENT_TEAM。
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+        DEVELOPMENT_TEAM: ""
+        SWIFT_OPTIMIZATION_LEVEL: "-O"
+    scheme:
+      testTargets: []

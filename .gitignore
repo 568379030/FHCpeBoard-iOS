@@ -1,0 +1,13 @@
+# Xcode / 构建产物
+build/
+dist/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# 本地调试
+node_modules/
