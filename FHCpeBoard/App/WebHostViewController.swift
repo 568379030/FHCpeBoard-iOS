@@ -94,7 +94,9 @@ final class WebHostViewController: UIViewController {
         runtimeBridge.onDiagnostic = { [weak self] text in self?.logDiagnostic(text) }
         pageBridge.onDiagnostic = { [weak self] text in self?.logDiagnostic(text) }
 
-        pageBridge.onLoadHTML = { [weak self] id, html in
+        // loadhtml 由 runtime（core.html 的 AndroidCore.loadHTML）发出，
+        // 因此必须挂在 runtimeBridge 上——挂到 pageBridge 会永远收不到。
+        runtimeBridge.onLoadHTML = { [weak self] id, html in
             guard let self = self else { return }
             self.didRenderPage = true
             self.bootTimer?.invalidate()
