@@ -2,7 +2,7 @@ name: build-unsigned-ipa
 
 on:
   push:
-    branches: [main]
+    branches: [main, air6-v4.2-sample]
   workflow_dispatch:
 
 jobs:
@@ -12,6 +12,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Test adapter task contract
+        run: node test/adapter.tasks.test.js
 
       - name: 安装 XcodeGen
         run: brew install xcodegen

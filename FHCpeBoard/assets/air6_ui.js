@@ -336,7 +336,13 @@
     if(s&&m)el('lockedCellText').textContent=Number(s.lock_mode)>0?'已锁定':Number(m.lte_cell_count)+Number(m.nr_cell_count)>0?'多小区锁定':'未锁定';
     else if(errors.single||errors.multiple)el('lockedCellText').textContent='读取失败';
   };
-  window.air6WriteResult=result=>{if(!active||!accepts(result))return;setBusy(false);el('air6Result').textContent=result.message||'处理完成';showUpdateToast(result.message,result.ok?'success':'warning');if(result.ok){dirty=false;dispatchPanel('air6ReadControls');}};
+  window.air6WriteResult=result=>{if(!active||!accepts(result))return;setBusy(false);el('air6Result').textContent=result.message||'处理完成';
+    if(result.awaiting_confirmation&&result.task_id){
+      const button=document.createElement('button');button.textContent='确认保留本次配置';
+      button.onclick=()=>{button.disabled=true;run('air6ConfirmCell',{task_id:result.task_id},'确认保留此任务的小区配置？');};
+      el('air6Result').appendChild(button);
+    }
+    showUpdateToast(result.message,result.ok?'success':'warning');if(result.ok){dirty=false;dispatchPanel('air6ReadControls');}};
   window.air6ExtraData=result=>{
     if(!active||!accepts(result))return;loaded=result.ok||!!result.config||result.kind==='rf'||!!result.operation&&loaded;setBusy(false);
     if(['scheduler','failover'].includes(result.kind)){el('air6Result').textContent=result.message||'';window.__air6Automation.render(result);return;}

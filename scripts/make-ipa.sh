@@ -5,7 +5,7 @@ set -euo pipefail
 
 APP_PATH="${1:-build/Build/Products/Release-iphoneos/FHCpeBoard.app}"
 OUT_DIR="${2:-dist}"
-NAME="FHCpeBoard-1.4.3-local-52-unsigned"
+NAME="FHCpeBoard-1.4.3-local-53-air6-v42-sample-unsigned"
 
 if [ ! -d "$APP_PATH" ]; then
   echo "找不到 .app: $APP_PATH" >&2

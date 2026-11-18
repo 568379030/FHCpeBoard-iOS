@@ -257,7 +257,7 @@
     if(!online||!api){
       const message='请先登录设备';
       if(['smsList','smsGet'].includes(msg.action))return ui('smsUpdate',{type:msg.action==='smsGet'?'get':'list',error:message});
-      const callback=msg.action==='air6TaskPreview'?'air6TaskPreviewData':msg.action==='air6Ota'?'air6OtaData':msg.action.startsWith('air6Advanced')?'air6AdvancedData':msg.action.startsWith('air6Extra')?'air6ExtraData':msg.action==='air6WifiLoad'?'air6WifiData':msg.action==='air6WifiSave'?'air6WifiResult':msg.action==='air6Clients'?'air6ClientsData':msg.action==='wanInfo'?'air6WanData':/^air6(ReadControls|Set|Unlock)/.test(msg.action)?'air6WriteResult':msg.action==='sendAtCommand'?'atResult':msg.action==='rebootDevice'?'air6RebootResult':null;
+      const callback=msg.action==='air6TaskPreview'?'air6TaskPreviewData':msg.action==='air6Ota'?'air6OtaData':msg.action.startsWith('air6Advanced')?'air6AdvancedData':msg.action.startsWith('air6Extra')?'air6ExtraData':msg.action==='air6WifiLoad'?'air6WifiData':msg.action==='air6WifiSave'?'air6WifiResult':msg.action==='air6Clients'?'air6ClientsData':msg.action==='wanInfo'?'air6WanData':/^air6(ReadControls|Set|Unlock|Confirm)/.test(msg.action)?'air6WriteResult':msg.action==='sendAtCommand'?'atResult':msg.action==='rebootDevice'?'air6RebootResult':null;
       if(callback)return ui(callback,{ok:false,message,output:message,requestId:msg.requestId,kind:msg.kind});
       if(['smsSend','smsDelete','smsRead'].includes(msg.action)&&current?.fhLine==='air6')return ui('air6SmsResult',{ok:false,message,type:{smsSend:'send',smsDelete:'delete',smsRead:'read'}[msg.action],recv:msg.recv||[]});
       throw Error(message);
