@@ -24,10 +24,11 @@ public class MainActivity extends Activity {
  private final ExecutorService requests=Executors.newFixedThreadPool(4);
  private android.content.SharedPreferences prefs;
  private final java.net.CookieManager cookies=new java.net.CookieManager(null,CookiePolicy.ACCEPT_ALL);
+ private byte[] readBytes(InputStream in) throws IOException {ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))!=-1){out.write(buffer,0,n);if(out.size()>16*1024*1024)throw new IOException("Response too large");}return out.toByteArray();}
  private String q(String s){return JSONObject.quote(s==null?"":s);}
  private String asset(String name){
   if(!name.matches("[A-Za-z0-9_.-]+"))return "";
-  try(InputStream in=getAssets().open(name)){return new String(in.readAllBytes(),StandardCharsets.UTF_8);}catch(Exception e){Log.e("Air6","Missing asset "+name,e);return "";}
+  try(InputStream in=getAssets().open(name)){return new String(readBytes(in),StandardCharsets.UTF_8);}catch(Exception e){Log.e("Air6","Missing asset "+name,e);return "";}
  }
  private void rt(String js){runOnUiThread(()->runtime.evaluateJavascript(js,null));}
  private void status(String s){Log.i("Air6",s);runOnUiThread(()->diagnostic.setText(s));}
@@ -85,7 +86,7 @@ public class MainActivity extends Activity {
     synchronized(cookies){for(Map.Entry<String,List<String>> e:cookies.get(uri,Map.of()).entrySet())c.setRequestProperty(e.getKey(),String.join("; ",e.getValue()));}
     if(opt.has("body")){c.setDoOutput(true);try(OutputStream o=c.getOutputStream()){o.write(opt.getString("body").getBytes(StandardCharsets.UTF_8));}}
     code=c.getResponseCode();synchronized(cookies){cookies.put(uri,c.getHeaderFields());}
-    InputStream in=code>=400?c.getErrorStream():c.getInputStream();try(InputStream stream=in){body=stream==null?"":new String(stream.readAllBytes(),StandardCharsets.UTF_8);}
+    InputStream in=code>=400?c.getErrorStream():c.getInputStream();try(InputStream stream=in){body=stream==null?"":new String(readBytes(stream),StandardCharsets.UTF_8);}
    }catch(Exception e){body=e instanceof javax.net.ssl.SSLException?"TLS_CERT_FAILED":e instanceof UnknownHostException?"DNS_FAILED":e.getMessage();Log.e("Air6HTTP","request failed",e);}finally{if(c!=null)c.disconnect();}
    rt("window.__fetchText("+q(id)+","+code+","+q(body)+")");
   });}
