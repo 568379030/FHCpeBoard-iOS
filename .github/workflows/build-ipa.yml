@@ -2,43 +2,68 @@ name: build-unsigned-ipa
 
 on:
   push:
-    branches: [main]
+    branches: [main, air6-v4.2-sample, ios-air6-sample59]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    runs-on: macos-15-intel
-    timeout-minutes: 30
+    runs-on: macos-14
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安装 XcodeGen
+      - name: Node contract tests
+        run: |
+          node test/adapter.tasks.test.js
+          node -e "require('./FHCpeBoard/assets/air6_map.js');require('./FHCpeBoard/assets/air6_sms.js');console.log('air6 js loads')"
+
+      - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: 生成 Xcode 工程
+      - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: 编译（未签名）
+      - name: Build (unsigned, device)
         run: |
+          set -o pipefail
           xcodebuild \
             -project FHCpeBoard.xcodeproj \
             -scheme FHCpeBoard \
             -configuration Release \
             -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            ONLY_ACTIVE_ARCH=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build | tee build.log
+          tail -5 build.log
 
-      - name: 打包 IPA
+      - name: Package IPA
         run: bash scripts/make-ipa.sh
 
-      - name: 上传产物
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: FHCpeBoard-unsigned-ipa
           path: dist/*.ipa
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish release (public download link)
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-air6-${{ github.run_number }}
+          name: AIR6 iOS unsigned build #${{ github.run_number }}
+          body: |
+            Unsigned IPA built by GitHub Actions from ${{ github.ref_name }} @ ${{ github.sha }}.
+            Install via sideloading (Sideloadly / AltStore / TrollStore); it is not signed for the App Store.
+            iOS boot (white screen) is still unverified — if the app shows a blank screen, use the 3-finger
+            long press to open the on-screen diagnostics panel and report the log lines.
+          files: dist/*.ipa

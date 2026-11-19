@@ -9,7 +9,7 @@
   let sessionVersion=0,retryAt=0,retryDelay=5000,retryBlocked=false,nextProbe=0,nextLive=0,nextFull=0,nextSmsBadge=0,smsBadgeBusy=false,nextOtaStatus=0,otaStatusBusy=false;
   let activePage='overview',lastUserActivity=Date.now(),lastConnectedScope='',lastSampleSig='',lastProbeShown=null;
   let nextSmsRefresh=0,otaWatching=false,nextOtaPoll=0,otaPollMs=5000;
-  let speedBusy=false,lastLiveAt=0;
+  let speedBusy=false,lastLiveAt=0,pendingBusy=false;
   // updateData redraws the whole overview; skip it when only fast-changing fields moved.
   const sampleSig=data=>{try{return JSON.stringify(data,(key,value)=>['updateTime','downSpeed','upSpeed'].includes(key)?undefined:value);}catch(_){return '';}};
   let dispatch=Promise.resolve(),retiredQueue=Promise.resolve();const loginWaiters=[];
@@ -105,7 +105,7 @@
       lastConnectedScope=connectedScope;
       await state({automatic,syncProfiles:true,busy:false,success:true,message:'登录成功 · '+candidate.line.label});await config();await status();
       await ui('setSuperMode',candidate.line?.mode!=='air6'&&/^superadmin$/i.test(p.username)?'1':'0');
-      if(candidate.line?.mode==='air6'){await probeSmsBadge(true);await probeOtaStatus(true);}
+      if(candidate.line?.mode==='air6'){await probeSmsBadge(true);await probeOtaStatus(true);scanPending();}
       await refresh();
       if(candidate.line?.mode==='air6')await api.action({action:'air6ReadControlSummary'});
       if(activePage==='neighbor')await api.action({action:'switchPage',page:'neighbor'});
@@ -144,6 +144,16 @@
   async function speedTick(){
     if(!foreground||profileEditing||loginBusy||writing||!online||current?.fhLine!=='air6'||!current.refresh||speedBusy||Date.now()<nextLive)return;
     try{await live();}catch(e){if(['SESSION_EXPIRED','AUTH_REJECTED'].includes(e.code))await networkFailure(e);}
+  }
+  // Write tasks can outlive the UI: on login, resume and manual refresh scan
+  // for tasks that still wait for confirmation or whose result is unknown.
+  // Never auto-confirm on the user's behalf.
+  function scanPending(){
+    if(!api||!online||current?.fhLine!=='air6'||pendingBusy)return;
+    pendingBusy=true;const version=sessionVersion;
+    Promise.resolve().then(()=>api.action({action:'air6PendingTasks'}))
+      .catch(()=>{})
+      .finally(()=>{pendingBusy=false;});
   }
   async function networkFailure(e){
     if(e.code==='STALE')return;
@@ -252,17 +262,17 @@
       case 'clearWallpaper':N.kcRemove('LAN_WALLPAPER');await __nevalJS('window.wallpaperClear&&window.wallpaperClear()');return ui('wallpaperResult',{ok:1});
     }
     if(['getUiPrefs','setUiPrefs','getHomeCards','setHomeCards'].includes(msg.action)){
-      const p=selected()||{host:'192.168.8.1'};return (api||makeApi(p,sessionVersion)).action(msg);
+      const p=selected()||{host:'192.168.99.1'};return (api||makeApi(p,sessionVersion)).action(msg);
     }
     if(!online||!api){
       const message='请先登录设备';
       if(['smsList','smsGet'].includes(msg.action))return ui('smsUpdate',{type:msg.action==='smsGet'?'get':'list',error:message});
-      const callback=msg.action==='air6TaskPreview'?'air6TaskPreviewData':msg.action==='air6Ota'?'air6OtaData':msg.action.startsWith('air6Advanced')?'air6AdvancedData':msg.action.startsWith('air6Extra')?'air6ExtraData':msg.action==='air6WifiLoad'?'air6WifiData':msg.action==='air6WifiSave'?'air6WifiResult':msg.action==='air6Clients'?'air6ClientsData':msg.action==='wanInfo'?'air6WanData':/^air6(ReadControls|Set|Unlock)/.test(msg.action)?'air6WriteResult':msg.action==='sendAtCommand'?'atResult':msg.action==='rebootDevice'?'air6RebootResult':null;
+      const callback=msg.action==='air6TaskPreview'?'air6TaskPreviewData':msg.action==='air6Ota'?'air6OtaData':msg.action.startsWith('air6Advanced')?'air6AdvancedData':msg.action.startsWith('air6Extra')?'air6ExtraData':msg.action==='air6WifiLoad'?'air6WifiData':msg.action==='air6WifiSave'?'air6WifiResult':msg.action==='air6Clients'?'air6ClientsData':msg.action==='wanInfo'?'air6WanData':/^air6(ReadControls|Set|Unlock|Confirm)/.test(msg.action)?'air6WriteResult':msg.action==='sendAtCommand'?'atResult':msg.action==='rebootDevice'?'air6RebootResult':null;
       if(callback)return ui(callback,{ok:false,message,output:message,requestId:msg.requestId,kind:msg.kind});
       if(['smsSend','smsDelete','smsRead'].includes(msg.action)&&current?.fhLine==='air6')return ui('air6SmsResult',{ok:false,message,type:{smsSend:'send',smsDelete:'delete',smsRead:'read'}[msg.action],recv:msg.recv||[]});
       throw Error(message);
     }
-    const readOnly=['air6ExtraRead','air6AdvancedRead','air6ReadControls','air6ReadControlSummary','air6WifiLoad','air6Clients','wanInfo','smsList','smsGet','smsBadgeProbe','air6TaskPreview'].includes(msg.action)||msg.action==='air6Ota'&&msg.kind==='status';
+    const readOnly=['air6ExtraRead','air6AdvancedRead','air6ReadControls','air6ReadControlSummary','air6WifiLoad','air6Clients','wanInfo','smsList','smsGet','smsBadgeProbe','air6TaskPreview','air6PendingTasks'].includes(msg.action)||msg.action==='air6Ota'&&msg.kind==='status';
     if(readOnly)return api.action(msg);
     writing=true;try{return await api.action(msg);}finally{writing=false;}
   }
@@ -299,6 +309,7 @@
       if(!online){const p=recoveryProfile();if(p&&(resumed||retryAt&&Date.now()>=retryAt)){retryAt=0;await login(p,true);}return;}
       // Full global samples already verify the session. An extra heartbeat
       // before a due sample would delay that cycle by another network request.
+      if(resumed&&current.fhLine==='air6')scanPending();
       if((resumed||refreshSec(current.refreshSec)===0)&&Date.now()>=nextProbe){nextProbe=Date.now()+20000;try{await api.probe();stale(version);}catch(e){if(version!==sessionVersion)return;await networkFailure(e);const p=recoveryProfile();if(resumed&&p)await login(p,true);return;}}
       // An in-flight read may finish after pause or while a form opens.
       if(version!==sessionVersion||!foreground||profileEditing||writing)return;
@@ -334,7 +345,7 @@
   async function boot(){
     const page=N.assetRead('fhcpeweb.html'),adapter=N.assetRead('lan_ui.js'),images=N.assetRead('upstream_images.js'),css=N.assetRead('android_ui.css');
     await __nloadHTML(page.replace('</head>','<style>'+css+'</style><script>'+images+'</'+'script></head>').replace('</body>','<script>'+N.assetRead('device_address.js')+'</'+'script><script>'+adapter+'</'+'script><script>'+N.assetRead('air6_automation.js')+'</'+'script><script>'+N.assetRead('air6_ui.js')+'</'+'script><script>'+N.assetRead('sms_cards.js')+'</'+'script></body>'));
-    await makeApi(selected()||{host:'192.168.8.1'},sessionVersion).initialize();
+    await makeApi(selected()||{host:'192.168.99.1'},sessionVersion).initialize();
     const p=selected(),autoEligible=!!(p&&p.password&&!p.authBlocked);
     // Do not open a modal for a verified auto-login profile, even for a single
     // frame. Authentication failures still explicitly open the login dialog.

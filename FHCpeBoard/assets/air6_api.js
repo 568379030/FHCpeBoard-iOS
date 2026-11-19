@@ -514,51 +514,12 @@
       if(!values.length||values.some(v=>!/^\d+$/.test(v)||Number(v)<1||Number(v)>1024))throw error('请填写有效频段，例如 1/3/41');
       return [...new Set(values.map(Number))].sort((a,b)=>a-b).join('/');
     };
+    const taskAdapter=(typeof module!=='undefined'?require('./adapter_tasks.js'):root.Air6AdapterTasks).create(rpc,emit);
     async function write(message){
-      if(Date.now()<writeUntil)throw error('模组正在恢复，请约 '+Math.ceil((writeUntil-Date.now())/1000)+' 秒后读取配置确认');
-      let check;
-      if(message.action==='air6SetBands'){
-        const before=await call('get_bandmode_str'),payload={};
-        for(const radio of ['lte','nr']){
-          const requested=message.reset?before['support_'+radio+'_band']:message[radio];
-          if(!String(requested||'').trim()&&!message.reset)continue;
-          const value=bandList(requested);
-          const supported=bandList(before['support_'+radio+'_band']).split('/');
-          if(value.split('/').some(v=>!supported.includes(v)))throw error('包含设备不支持的 '+radio.toUpperCase()+' 频段');
-          payload['set_'+radio+'_band']=value;
-        }
-        if(!payload.set_lte_band&&!payload.set_nr_band)throw error('请至少选择一个 4G 或 5G 频段');
-        if(['lte','nr'].every(r=>!payload['set_'+r+'_band']||bandList(before['current_'+r+'_band'])===payload['set_'+r+'_band']))return emit('air6WriteResult',{ok:true,message:'频段未改变，无需重新搜网'});
-        if(before.current_umts_band)payload.set_umts_band=before.current_umts_band;
-        writeUntil=Date.now()+60000;await call('set_bandmode_str',payload);
-        check=async()=>{const after=await call('get_bandmode_str');return ['lte','nr'].every(r=>!payload['set_'+r+'_band']||bandList(after['current_'+r+'_band'])===payload['set_'+r+'_band']);};
-      }else if(message.action==='air6SetRat'){
-        if(!['1','3','15','19','21'].includes(String(message.rat)))throw error('不支持的网络模式');
-        if(String((await call('get_rat')).rat)===String(message.rat))return emit('air6WriteResult',{ok:true,message:'网络模式未改变，无需重新搜网'});
-        writeUntil=Date.now()+10000;await call('set_rat',{rat:String(message.rat)},true);
-        check=async()=>String((await call('get_rat')).rat)===String(message.rat);
-      }else if(message.action==='air6SetCell'){
-        const arfcn=Number(message.arfcn),pci=Number(message.pci),nr=message.rat==='nr';
-        if(!['nr','lte'].includes(message.rat)||!String(message.arfcn||'').trim()||!String(message.pci??'').trim()||!Number.isInteger(arfcn)||arfcn<1||arfcn>(nr?3279165:262143)||!Number.isInteger(pci)||pci<0||pci>(nr?1007:503))throw error('请填写有效的频点和 PCI');
-        writeUntil=Date.now()+10000;await call('set_celllock',{act:nr?11:7,arfcn,pci,lock_mode:3});
-        check=async()=>{const v=(await call('get_celllock')).cell_lock_info||{};return Number(v.act)===(nr?11:7)&&Number(v.arfcn)===arfcn&&Number(v.pci)===pci&&Number(v.lock_mode)===3;};
-      }else if(message.action==='air6SetCells'){
-        const rows=String(message.cells||'').trim().split(/\n+/).filter(Boolean);if(!rows.length||rows.length>20)throw error('请填写 1–20 个小区，每行 LTE/NR,频点,PCI');
-        const payload={lte_cell_list:[],nr_cell_list:[]};
-        for(const row of rows){const parts=row.trim().split(/[\s,]+/);if(parts.length!==3||!['LTE','NR'].includes(parts[0].toUpperCase()))throw error('每行格式为 LTE/NR,频点,PCI');const nr=parts[0].toUpperCase()==='NR',arfcn=Number(parts[1]),pci=Number(parts[2]);if(!Number.isInteger(arfcn)||arfcn<1||arfcn>(nr?3279165:262143)||!Number.isInteger(pci)||pci<0||pci>(nr?1007:503))throw error('小区频点或 PCI 无效');payload[nr?'nr_cell_list':'lte_cell_list'].push(nr?{nr_arfcn:arfcn,pci}:{earfcn:arfcn,pci});}
-        for(const radio of ['lte','nr'])payload[radio+'_cell_list']=payload[radio+'_cell_list'].filter((c,i,a)=>a.findIndex(v=>v.pci===c.pci&&(v.nr_arfcn??v.earfcn)===(c.nr_arfcn??c.earfcn))===i);
-        payload.lte_cell_count=payload.lte_cell_list.length;payload.nr_cell_count=payload.nr_cell_list.length;writeUntil=Date.now()+10000;await call('set_celllock_list',payload);
-        const keys=list=>list.map(c=>String(c.nr_arfcn??c.earfcn)+':'+String(c.pci)).sort().join(',');
-        check=async()=>{const after=await call('get_celllock_list');return ['lte','nr'].every(r=>Array.isArray(after[r+'_cell_list'])&&keys(after[r+'_cell_list'])===keys(payload[r+'_cell_list']));};
-      }else if(message.action==='air6UnlockCell'){
-        writeUntil=Date.now()+10000;await call('set_celllock_list',{lte_cell_count:0,nr_cell_count:0,lte_cell_list:[],nr_cell_list:[]});
-        await call('set_celllock',{act:2,arfcn:0,pci:0,lock_mode:0});
-        check=async()=>{const v=(await call('get_celllock')).cell_lock_info||{},m=await call('get_celllock_list');return Number(v.lock_mode)===0&&Number(m.lte_cell_count)===0&&Number(m.nr_cell_count)===0;};
-      }else throw error('Air6 尚未适配此操作');
-      // Never retry a write: the modem may have applied it before disconnecting.
-      let confirmed=false;try{confirmed=await check();}catch(_){ }
-      await emit('air6WriteResult',{ok:confirmed,pending:!confirmed,message:confirmed?'已回读确认设置生效':'已提交，模组可能正在重新搜网；请稍后点击读取配置确认'});
+      return taskAdapter.write(message);
+
     }
+
     async function sms(message){
       const type={smsSend:'send',smsDelete:'delete',smsRead:'read'}[message.action];
       const readStates={};
@@ -657,7 +618,7 @@
         }
         if(message.action==='air6ReadControlSummary')return controlSummary();
         if(message.action==='air6ReadControls'){try{return await controls(message.section);}catch(e){await emit('air6WriteResult',{ok:false,message:e.message});if(e.code)throw e;return;}}
-        if(['air6SetBands','air6SetRat','air6SetCell','air6SetCells','air6UnlockCell'].includes(message.action)){
+        if(['air6SetBands','air6SetRat','air6SetCell','air6SetCells','air6UnlockCell','air6ConfirmCell'].includes(message.action)){
           try{await write(message);}catch(e){await emit('air6WriteResult',{ok:false,message:e.message+'；若提交后断线，请先读取配置确认，勿连续重试'});}return;
         }
         if(['smsList','smsGet','smsBadgeProbe','smsRead','smsSend','smsDelete'].includes(message.action))return sms(message);

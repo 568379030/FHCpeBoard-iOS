@@ -173,7 +173,8 @@
   const unavailable=new Map();
   function markUnavailable(enabled){
     const ids=['fanRow'];
-    const selectors=['[onclick="openTrafficModal()"]','[onclick="openRebootModal()"]'];
+    // The reboot entry stays visible: the firmware exposes reboot_async.
+    const selectors=['[onclick="openTrafficModal()"]'];
     // These FiberHome identity fields do not exist anywhere in the Air6 LuCI
     // or cmodem pages. Keep fields that the Web UI does expose (model,
     // firmware, kernel, modem/IMEI/baseband and WAN).
@@ -294,8 +295,9 @@
     if(!active||!accepts(data))return;loaded=true;
     if(data.section==='rat'||data.section==='band'){
       controlState=Object.assign({},controlState,data);const errors=Object.assign({},controlSummaryState?.errors);delete errors.rat;if(data.bands)delete errors.bands;controlSummaryState=Object.assign({},controlSummaryState,data,{loading:false,errors});
-      if(!dirty){el('air6Rat').value=data.rat;if(data.bands){el('air6Lte').value=data.bands.current_lte_band||'';el('air6Nr').value=data.bands.current_nr_band||'';}}
-      el('air6RatCurrent').textContent='当前制式：'+(ratLabels[data.rat]||'未知');
+      if(!dirty){if(data.rat!=null)el('air6Rat').value=String(data.rat);if(data.bands){el('air6Lte').value=data.bands.current_lte_band||'';el('air6Nr').value=data.bands.current_nr_band||'';}}
+      // get_bands cannot report the RAT preference, so fall back to the raw RAT string.
+      el('air6RatCurrent').textContent='当前制式：'+(ratLabels[data.rat]||(data.ratText?String(data.ratText)+'（偏好未上报）':'未知'));
       if(data.bands){chips('lte',data.bands.support_lte_band);chips('nr',data.bands.support_nr_band);}
       window.air6ControlSummary(controlSummaryState);setBusy(false);el('air6Result').textContent='已读取设备当前配置';return;
     }
@@ -309,7 +311,7 @@
     const limited=['lte','nr'].some(r=>splitBands(b['current_'+r+'_band']).sort().join('/')!==splitBands(b['support_'+r+'_band']).sort().join('/'));
     el('lockedBandText').textContent=limited?'已限制频段':'全部频段';
     el('lockedCellText').textContent=Number(s.lock_mode)>0?'已锁定':Number(m.lte_cell_count)+Number(m.nr_cell_count)>0?'多小区锁定':'未锁定';
-    el('netSettingText').textContent=ratSummary(data.rat)||'--';el('air6RatCurrent').textContent='当前制式：'+(ratLabels[data.rat]||'未知');
+    el('netSettingText').textContent=ratSummary(data.rat)||'--';el('air6RatCurrent').textContent='当前制式：'+(ratLabels[data.rat]||(data.ratText?String(data.ratText):'未知'));
     el('air6CellState').textContent=(Number(s.lock_mode)>0?'单小区：'+(Number(s.act)===11?'NR':'LTE')+' / '+s.arfcn+' / PCI '+s.pci:'未锁定单小区')+'；多小区：LTE '+(m.lte_cell_count||0)+'，NR '+(m.nr_cell_count||0);
     el('air6Result').textContent='已读取设备当前配置';
   };
@@ -332,11 +334,19 @@
     if(b){const limited=['lte','nr'].some(r=>splitBands(b['current_'+r+'_band']).sort().join('/')!==splitBands(b['support_'+r+'_band']).sort().join('/'));el('lockedBandText').textContent=limited?'已限制频段':'全部频段';}
     else if(errors.bands)el('lockedBandText').textContent='读取失败';
     if(data.rat!==undefined)el('netSettingText').textContent=ratSummary(data.rat)||'未知';
+    else if(data.ratText)el('netSettingText').textContent=String(data.ratText)+'（偏好未上报）';
     else if(errors.rat)el('netSettingText').textContent='读取失败';
     if(s&&m)el('lockedCellText').textContent=Number(s.lock_mode)>0?'已锁定':Number(m.lte_cell_count)+Number(m.nr_cell_count)>0?'多小区锁定':'未锁定';
     else if(errors.single||errors.multiple)el('lockedCellText').textContent='读取失败';
+    else el('lockedCellText').textContent='固件未提供读数';
   };
-  window.air6WriteResult=result=>{if(!active||!accepts(result))return;setBusy(false);el('air6Result').textContent=result.message||'处理完成';showUpdateToast(result.message,result.ok?'success':'warning');if(result.ok){dirty=false;dispatchPanel('air6ReadControls');}};
+  window.air6WriteResult=result=>{if(!active||!accepts(result))return;setBusy(false);el('air6Result').textContent=result.message||'处理完成';
+    if(result.awaiting_confirmation&&result.task_id){
+      const button=document.createElement('button');button.textContent='确认保留本次配置';
+      button.onclick=()=>{button.disabled=true;run('air6ConfirmCell',{task_id:result.task_id},'确认保留此任务的小区配置？');};
+      el('air6Result').appendChild(button);
+    }
+    showUpdateToast(result.message,result.ok?'success':'warning');if(result.ok){dirty=false;dispatchPanel('air6ReadControls');}};
   window.air6ExtraData=result=>{
     if(!active||!accepts(result))return;loaded=result.ok||!!result.config||result.kind==='rf'||!!result.operation&&loaded;setBusy(false);
     if(['scheduler','failover'].includes(result.kind)){el('air6Result').textContent=result.message||'';window.__air6Automation.render(result);return;}
@@ -511,9 +521,120 @@
   const applyCards=window.applyHomeCards;
   window.applyHomeCards=function(...args){const result=applyCards?.apply(this,args);renderAir6Ca();return result;};
   const bytes=value=>{const n=Number(value);if(value==null||!Number.isFinite(n)||n<0)return '--';if(n<1000)return n.toFixed(0)+' B';if(n<1e6)return (n/1e3).toFixed(2)+' KB';if(n<1e9)return (n/1e6).toFixed(2)+' MB';if(n<1e12)return (n/1e9).toFixed(2)+' GB';return (n/1e12).toFixed(2)+' TB';};
+  // This firmware exposes no negotiated AMBR/QCI (checked live: RIL has no
+  // field, AT+CGCONTRDP/CGEQREQ/CGQREQ return no QoS). Instead of printing a
+  // dead "- -", the same three tiles show real carrier bandwidth and CC count
+  // with matching labels.
+  /* Freshness line: the device caches status for up to 30 s, so the page must
+     say how old the reading is instead of implying real time. */
+  const fresh=document.createElement('div');fresh.id='air6Fresh';fresh.className='air6-hint';
+  fresh.style.cssText='margin:-4px 0 10px;font-size:11px';
+  const pendingCard=document.createElement('div');pendingCard.id='air6PendingCard';pendingCard.className='air6-card';
+  pendingCard.style.cssText='display:none;border:1px solid rgba(255,149,0,.35);background:rgba(255,149,0,.08)';
+  window.air6Pending=payload=>{
+   if(!active)return;
+   const tasks=(payload&&payload.tasks)||[];
+   pendingCard.textContent='';
+   if(!tasks.length){pendingCard.style.display='none';return;}
+   const deviceName=(window.__air6LastData&&window.__air6LastData.deviceName)||'Air6';
+   const title=document.createElement('p');title.style.cssText='margin:0 0 8px;font-weight:600';
+   title.textContent=deviceName+'：'+tasks.length+' 个设备任务需要处理';
+   pendingCard.appendChild(title);
+   const labels={pending_confirm:'等待你确认',applying:'执行中',rolled_back:'已回滚',failed:'已失败',unknown:'结果未知'};
+   const operations={cell:'锁定小区',band:'锁定频段',rat:'切换制式',radio:'射频开关',reboot:'重启',reconnect:'重新拨号'};
+   for(const task of tasks){
+    const row=document.createElement('div');row.style.cssText='display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap';
+    const text=document.createElement('span');text.className='air6-hint';text.style.flex='1 1 60%';
+    const op=operations[task.kind]||task.kind||'任务';
+    const left=task.deadline?Math.max(0,Math.round((task.deadline*1000-Date.now())/1000)):null;
+    const remain=left===null?'':(left>0?' · 剩 '+Math.floor(left/60)+' 分 '+left%60+' 秒':' · 已超时');
+    text.textContent=[op,task.target||'',labels[task.group]||task.state,task.task_id].filter(Boolean).join(' · ')
+     +remain+(task.message?'\n'+task.message:'');
+    row.appendChild(text);
+    if(task.group==='pending_confirm'&&task.task_id){
+     const confirmButton=document.createElement('button');confirmButton.textContent='确认保留';
+     confirmButton.onclick=()=>{
+      confirmButton.disabled=true;
+      if(!window.confirm('确认保留任务 '+task.task_id+' 的配置？确认后设备将保留该次下发结果。')){confirmButton.disabled=false;return;}
+      send('air6ConfirmCell',{task_id:task.task_id,device:deviceName});
+     };
+     row.appendChild(confirmButton);
+    }
+    pendingCard.appendChild(row);
+   }
+   const refreshButton=document.createElement('button');refreshButton.textContent='重新扫描';
+   refreshButton.onclick=()=>send('air6PendingTasks');
+   pendingCard.appendChild(refreshButton);
+   pendingCard.style.display='';
+  };
+
+  const aqOriginal=new Map();
+  /* AMBR is not reported by this firmware (checked via RIL and AT), so the two
+     rate tiles fall back to a bandwidth-derived theoretical peak and say so in
+     the label instead of pretending to be a contracted rate. */
+  const aqTiles=[
+    {id:'dlAmbr',
+     label:data=>data&&data.dlAmbrMbps!=null?'签约下行':'理论峰值↓',
+     value:data=>{
+      if(data&&data.dlAmbrMbps!=null)return data.dlAmbrMbps+' Mbps';
+      if(data&&data.peakDlMbps)return data.peakDlMbps+' Mbps';
+      const c=(data&&data.carriers||[])[0];return c&&c.dlBandwidth!=null?c.dlBandwidth+' MHz':null;
+     }},
+    {id:'ulAmbr',
+     label:data=>data&&data.ulAmbrMbps!=null?'签约上行':'理论峰值↑',
+     value:data=>{
+      if(data&&data.ulAmbrMbps!=null)return data.ulAmbrMbps+' Mbps';
+      if(data&&data.peakUlMbps)return data.peakUlMbps+' Mbps';
+      const c=(data&&data.carriers||[])[0];return c&&c.ulBandwidth!=null?c.ulBandwidth+' MHz':null;
+     }},
+    {id:'qciVal',
+     label:data=>data&&data.qci!=null?'QCI':'聚合载波',
+     value:data=>{const n=(data&&data.carriers||[]).length;return n?n+'CC':null;}}
+  ];
+  const aqLabels=()=>{const list=[];for(const tile of aqTiles){const node=el(tile.id);const label=node?.parentNode?.querySelector?.('.aq-label');if(label)list.push([tile,label]);}return list;};
+  const fillContractTiles=data=>{
+    for(const [tile,label] of aqLabels()){
+      const node=el(tile.id);if(!node)continue;
+      if(!aqOriginal.has(label))aqOriginal.set(label,label.textContent);
+      const wanted=typeof tile.label==='function'?tile.label(data):tile.label;
+      if(wanted&&label.textContent!==wanted)label.textContent=wanted;
+      const value=data?tile.value(data):null;
+      if(value!=null&&node.textContent!==value){
+        node.textContent=value;node.style.fontSize='20px';node.style.color='';node.style.fontWeight='';
+      }
+    }
+  };
+  const restoreContractTiles=()=>{
+    for(const [label,text] of aqOriginal)label.textContent=text;
+    aqOriginal.clear();
+    for(const tile of aqTiles){const node=el(tile.id);if(node){node.textContent='--';node.style.fontSize='';node.style.color='';node.style.fontWeight='';}}
+  };
+  /* The upstream overview rebuild drops #uptimeText after the first paint, and
+     its updateData writes to that id unconditionally, which would throw on the
+     second refresh. Keep a hidden placeholder alive so the page cannot break. */
+  const ensureUptime=()=>{
+    if(document.getElementById('uptimeText'))return;
+    const node=document.createElement('span');node.id='uptimeText';node.style.display='none';
+    node.setAttribute('aria-hidden','true');document.body.appendChild(node);
+  };
   window.updateData=data=>{
+    ensureUptime();
     if(active&&data?.deviceOnline)overviewSignal={rsrp:data.rsrp,rsrq:data.rsrq,sinr:data.sinr,rssi:data.rssi};
+    if(active&&data)window.__air6LastData=data;
     update(data);if(active&&data?.carriers)renderAir6Ca();
+    if(active){
+      fillContractTiles(data);
+      if(data?.uptimeText&&el('systemUptime'))el('systemUptime').textContent=String(data.uptimeText);
+      if(data){
+       const ageSec=Math.max(0,Math.round(Number(data.dataAgeMs||0)/1000));
+       const stale=data.cellsStale?' · 小区数据已过期':'';
+       el('air6Fresh').textContent='设备采集于 '+ageSec+' 秒前'+stale+' · 刷新于 '+new Date().toLocaleTimeString();
+       el('air6Fresh').style.color=ageSec>=20?'var(--ios-warning,#ff9500)':'';
+       const today=el('todayTotalText');
+       if(today&&data.trafficEstimated&&!/估算/.test(today.textContent))today.textContent+='（估算）';
+      }
+    }
+    else if(aqOriginal.size)restoreContractTiles();
     if(active&&data?.deviceOnline){
       systemDescription=data.air6FirmwareFull||data.swVersion||'--';for(const id of ['air6Kernel','air6Baseband','air6Module']){const value=String(data[id]||'--');el(id).textContent=id==='air6Kernel'&&value!=='--'&&!/^Linux\b/i.test(value)?'Linux '+value:value;}
       const ota=data.air6Ota||{},current=String(ota.current_version||'');if(current){el('setSwVersion').textContent=current;el('setSwVersion').title=current;}if(Object.keys(ota).length)renderOta(ota,activePageId==='settings');
@@ -533,6 +654,26 @@
     const key=''+now.getFullYear()+String(now.getMonth()+1).padStart(2,'0')+String(now.getDate()).padStart(2,'0');
     const today=daily.find(v=>String(v.date)===key);el('todayTotalText').textContent=today?bytes(Number(today.rx)+Number(today.tx)):'--';
   };
+  /* When polling stops (device unreachable) updateData is no longer called, so
+     the age line must degrade on its own instead of freezing a fresh-looking
+     number next to stale values. */
+  setInterval(()=>{
+   if(!active||!window.__air6LastData||!window.__air6LastData.fetchedAt)return;
+   const line=el('air6Fresh');if(!line)return;
+   const lag=Date.now()-window.__air6LastData.fetchedAt;
+   if(lag>15000){
+    line.textContent='数据已过期：'+Math.round(lag/1000)+' 秒没有更新（设备未响应）';
+    line.style.color='var(--ios-danger,#ff3b30)';
+   }
+  },3000);
+
+  const overviewPage=el('page-overview');
+  if(overviewPage){
+   const first=overviewPage.firstElementChild;
+   if(first)overviewPage.insertBefore(fresh,first);
+   else overviewPage.appendChild(fresh);
+   overviewPage.insertBefore(pendingCard,fresh.nextSibling);
+  }
   window.lanDeviceType=type=>{
     active=type==='air6';globalSnapshot={};window.__air6Automation?.reset();overviewSignal=null;document.body.dataset.lanDevice=active?'air6':'fh';otaClose();otaConfirmClose();otaState={};otaPrompted='';otaBusy=false;otaError='';otaCheckedAt=0;otaEntry.style.display='none';setOtaBadge(false);close();loaded=false;dirty=false;controlState=null;controlSummaryState=null;setBusy(false);markUnavailable(active);if(active)for(const id of ['lockedBandText','lockedCellText','netSettingText'])el(id).textContent='待读取';
     window.__lanAir6Layout?.(active);
@@ -554,11 +695,14 @@
     // Clear shared topology/speed caches when switching between protocol families.
     try{_lastTopoVals={};cachedClients=[];_spLastRaw={down:null,up:null};}catch(_){}
     if(active){
-      const labels={'本月流量':'累计流量','本月下载':'累计下载','本月上传':'累计上传'};
+      /* These are interface-lifetime counters, not calendar-month totals. */
+      /* These counters live on the cellular interface and reset when it is
+         re-created; the label must not imply a billing cycle. */
+      const labels={'本月流量':'接口累计流量','本月下载':'接口累计下载','本月上传':'接口累计上传'};
       for(const node of document.querySelectorAll('#page-overview *'))for(const text of node.childNodes){
         if(text.nodeType===3&&labels[text.textContent.trim()]){originalLabels.set(text,text.textContent);text.textContent=labels[text.textContent.trim()];}
       }
-    }else{for(const [node,text] of originalLabels)node.textContent=text;originalLabels.clear();}
+    }else{for(const [node,text] of originalLabels)node.textContent=text;originalLabels.clear();if(aqOriginal.size)restoreContractTiles();}
   };
-  const hint=document.createElement('p');hint.className='air6-hint';hint.textContent='Air6 默认地址 192.168.1.1，账号 root。';el('localTestMsg')?.parentNode.appendChild(hint);
+  const hint=document.createElement('p');hint.className='air6-hint';hint.textContent='QWRT Air6 默认地址 192.168.99.1，账号 root。';el('localTestMsg')?.parentNode.appendChild(hint);
 })();

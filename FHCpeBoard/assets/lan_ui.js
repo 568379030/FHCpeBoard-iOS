@@ -82,7 +82,7 @@
     if(busy)return;
     profileDirty=true;
     _localActiveIndex=-1;
-    for(const [id,value] of [['localHost','192.168.8.1'],['localUser','admin'],['localPass',''],['localProfileName','']]){const node=el(id);if(node)node.value=value;}
+    for(const [id,value] of [['localHost','192.168.99.1'],['localUser','root'],['localPass',''],['localProfileName','']]){const node=el(id);if(node)node.value=value;}
     const msg=el('localTestMsg');if(msg)msg.textContent='正在新增设备配置';
     for(const id of ['lanRefresh','lanReconnect']){const node=el(id);if(node)node.checked=id!=='lanAutoLogin';}
     setAutoRefreshSec(5);
