@@ -2,7 +2,7 @@ name: FHCpeBoard
 options:
   bundleIdPrefix: com.fhcpeboard
   deploymentTarget:
-    iOS: "14.0"
+    iOS: "15.0"
   createIntermediateGroups: true
   groupSortPosition: top
 
@@ -11,7 +11,7 @@ settings:
     MARKETING_VERSION: "1.4.8"
     CURRENT_PROJECT_VERSION: "59"
     SWIFT_VERSION: "5.0"
-    IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
     CLANG_ENABLE_MODULES: YES
 
 targets:
