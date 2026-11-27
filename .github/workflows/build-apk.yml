@@ -2,7 +2,7 @@ name: Build AIR6 Local APK
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, air6-apk]
   workflow_dispatch:
 
 jobs:
