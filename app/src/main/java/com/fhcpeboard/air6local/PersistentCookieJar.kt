@@ -16,14 +16,14 @@ class PersistentCookieJar : CookieJar {
     private val store = mutableMapOf<String, MutableList<Cookie>>()
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        val key = url.host()
+        val key = url.host
         val list = store.getOrPut(key) { mutableListOf() }
         for (c in cookies) {
-            list.removeAll { it.name() == c.name() && it.domain() == c.domain() && it.path() == c.path() }
-            if (c.expiresAt() > System.currentTimeMillis() || c.expiresAt() == Long.MAX_VALUE) {
+            list.removeAll { it.name == c.name && it.domain == c.domain && it.path == c.path }
+            if (c.expiresAt > System.currentTimeMillis() || c.expiresAt == Long.MAX_VALUE) {
                 list.add(c)
             } else {
-                list.removeAll { it.name() == c.name() }
+                list.removeAll { it.name == c.name }
             }
         }
         persist()
@@ -31,9 +31,9 @@ class PersistentCookieJar : CookieJar {
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val now = System.currentTimeMillis()
-        val list = store[url.host()] ?: return emptyList()
-        val valid = list.filter { it.expiresAt() > now }
-        store[url.host()] = valid.toMutableList()
+        val list = store[url.host] ?: return emptyList()
+        val valid = list.filter { it.expiresAt > now }
+        store[url.host] = valid.toMutableList()
         return valid.filter { it.matches(url) }
     }
 
@@ -54,13 +54,13 @@ class PersistentCookieJar : CookieJar {
                 val arr = JSONArray()
                 for (c in cookies) {
                     val o = JSONObject()
-                    o.put("name", c.name())
-                    o.put("value", c.value())
-                    o.put("expiresAt", c.expiresAt())
-                    o.put("domain", c.domain())
-                    o.put("path", c.path())
-                    o.put("secure", c.secure())
-                    o.put("httpOnly", c.httpOnly())
+                    o.put("name", c.name)
+                    o.put("value", c.value)
+                    o.put("expiresAt", c.expiresAt)
+                    o.put("domain", c.domain)
+                    o.put("path", c.path)
+                    o.put("secure", c.secure)
+                    o.put("httpOnly", c.httpOnly)
                     arr.put(o)
                 }
                 root.put(host, arr)

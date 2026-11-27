@@ -2,6 +2,7 @@ package com.fhcpeboard.air6local
 
 import android.util.Log
 import okhttp3.*
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
@@ -89,11 +90,11 @@ object HttpEngine {
     }
 
     private fun parseUrl(value: String): HttpUrl? {
-        val url = HttpUrl.parse(value) ?: return null
-        val scheme = url.scheme().lowercase()
+        val url = value.toHttpUrlOrNull() ?: return null
+        val scheme = url.scheme.lowercase()
         if (scheme != "http" && scheme != "https") return null
-        if (url.host().isEmpty()) return null
-        if (url.username().isNotEmpty() || url.password().isNotEmpty()) return null
+        if (url.host.isEmpty()) return null
+        if (url.username.isNotEmpty() || url.password.isNotEmpty()) return null
         return url
     }
 
@@ -112,7 +113,7 @@ object HttpEngine {
 
     /** 丢弃某设备的会话 Cookie。host 为空表示全部清除。 */
     fun clearSession(host: String) {
-        val jar = client.cookieJar()
+        val jar = client.cookieJar
         if (jar is PersistentCookieJar) jar.clear(host)
     }
 }

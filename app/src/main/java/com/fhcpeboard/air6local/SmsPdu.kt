@@ -15,7 +15,7 @@ object SmsPdu {
     private const val GSM7 = "@£\$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ\u001bÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà"
 
     private val GSM7_EXT = mapOf(
-        0x0a to '\f', 0x14 to '^', 0x28 to '{', 0x29 to '}', 0x2f to '\\',
+        0x0a to '\u000C', 0x14 to '^', 0x28 to '{', 0x29 to '}', 0x2f to '\\',
         0x3c to '[', 0x3d to '~', 0x3e to ']', 0x40 to '|', 0x65 to '€'
     )
 
