@@ -20,7 +20,9 @@ android {
         create("release") {
             val ks = System.getenv("KEYSTORE_FILE")
             if (!ks.isNullOrEmpty()) {
-                storeFile = file(ks)
+                // keystore 由 CI 在项目根目录生成（app/release.jks），
+                // 这里必须用 rootProject 解析，否则会错误指向 app/app/release.jks
+                storeFile = rootProject.file(ks)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("KEY_ALIAS")
                 keyPassword = System.getenv("KEY_PASSWORD")
