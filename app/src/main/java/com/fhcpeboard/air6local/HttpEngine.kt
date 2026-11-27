@@ -58,9 +58,14 @@ object HttpEngine {
         }
         val body = if (bodyStr != null && method != "GET" && method != "HEAD") {
             val ct = headers?.optString("Content-Type")
-                ?.ifEmpty { headers?.optString("content-type") }
-                ?.ifEmpty { "text/plain; charset=utf-8" }
-            bodyStr.toRequestBody(ct?.toMediaTypeOrNull())
+            val contentType = when {
+                ct.isNullOrEmpty() -> {
+                    val ct2 = headers?.optString("content-type")
+                    if (ct2.isNullOrEmpty()) "text/plain; charset=utf-8" else ct2
+                }
+                else -> ct
+            }
+            bodyStr.toRequestBody(contentType.toMediaTypeOrNull())
         } else null
         builder.method(method, body)
 
